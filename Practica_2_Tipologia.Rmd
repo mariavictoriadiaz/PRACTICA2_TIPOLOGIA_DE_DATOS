@@ -1,0 +1,768 @@
+---
+title: 'Tipología de datos: Práctica 2'
+author: "Autor: Maria Victoria Diaz"
+date: "Junio 2021"
+output:
+  pdf_document:
+    highlight: zenburn
+    toc: yes
+  word_document: default
+  html_document:
+    highlight: default
+    number_sections: yes
+    theme: cosmo
+    toc: yes
+    toc_depth: 2
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(eval=T, echo=T)#,comment = NA)
+knitr::opts_knit$set(progress = FALSE, verbose = FALSE)
+
+
+```
+
+# Análisis de sobrevivencia por insuficiencias cardiacas: Caso estudio Pakistán.
+
+El dataset que se analizará en este trabajo, es producto de un estudio realizado por Ahman et.al (2017),el cual se centró en el análisis de la supervivencia de los pacientes con insuficiencia cardíaca que fueron admitidos en el Instituto de Cardiología y el hospital aliado de Faisalabad-Pakistán durante el período comprendido entre abril y diciembre (2015). Todos los pacientes tenían 40 años o más, tenían disfunción sistólica ventricular izquierda y pertenecían a la clase III y IV de la NYHA. Se determinaron: la edad, la fracción de eyección, la creatinina sérica, el sodio sérico, la anemia, las plaquetas, la creatinina fosfocinasa, la presión arterial, el sexo, la diabetes y el tabaquismo como factores que pueden contribuir a la mortalidad. 
+
+En este trabajo, quiero determinar cuáles de todos estos factores son los que más influyen en la mortalidad por insuficiencias cardíacas, cómo se relacionan, y si existen  factores de riesgo diferentes a los aquí considerados para ayudar en un futuro a enfocar los distintos programas de prevención de enfermedades del corazón en la sociedad. 
+
+```{r, include=FALSE}
+library(dplyr)
+library(nortest)
+library(car)
+library(purrr)
+library(ggplot2)
+library(ggcorrplot)
+library(gridExtra)
+
+```
+
+# Descripción de las variables 
+
+
+```{r, message=FALSE, echo=FALSE}
+
+heart <-read.csv("C:/Users/mvdiaz/Downloads/heart_failure_clinical_records_dataset.csv")
+
+
+heart$anaemia <- as.factor(heart$anaemia)
+
+heart$diabetes <- as.factor(heart$diabetes)
+
+heart$high_blood_pressure <- as.factor(heart$high_blood_pressure)
+
+heart$sex <- as.factor(heart$sex)
+
+heart$smoking <- as.factor(heart$smoking)
+
+heart$DEATH_EVENT <- as.factor(heart$DEATH_EVENT)
+str(heart)
+
+```
+
+El estudio se realizó en 299 pacientes con insuficiencia cardíaca, y las variables presentes en el dataset fueron:
+
+ - Age: Edad del paciente.
+ - Anaemia: Si el paciente tiene o no un decenso en los glóbulos rojos.
+ - High blood pressure: Si el paciente tiene o no hipertensión.
+ - Creatinine phosphokinase (mcg/L): Nivel de creatinina fosfoquinasa en la sangre.
+ - Diabetes: Si el paciente tiene o no diabetes.
+ - Ejection fraction	Percentage: Porcentaje de sangre saliendo del corazón en cada contracción.
+ - Sex: 0 - Mujer; 1- Hombre.
+ - Plateletes (kiloplatelets/mL): Cantidad de plaquetas en la sangre.
+ - Serum creatinine: Nivel de creatinina presente en la sangre.
+ - Serum sodium: Nivel de sodio presente en la sangre.
+ - Smoking: Si el paciente fuma o no. 
+ - Time: Tiempo de seguimiento al paciente.
+ - Death event: Si el paciente murió o no durante el período de seguimiento.
+ 
+
+# Análisis exploratorio de variables cuantitativas 
+
+En primer lugar, analizaré las variables cuantitativas una a una y miraré si hay presencia de valores perdidos o también de valores extremos:
+ 
+```{r, message=FALSE}
+
+heart_c<- heart %>% select(age, creatinine_phosphokinase, 
+                           ejection_fraction, platelets, serum_creatinine,
+                           serum_sodium, time, DEATH_EVENT)
+  
+heart_c %>% split(.$DEATH_EVENT) %>% map(summary)
+
+
+```
+
+
+Los pacientes que sobrevivieron tenían entre 40 y 90 años. Los niveles medios de creatina fosfoquinasa en sangre fueron de 245 mcg/L. El porcentaje de sangre saliendo del corazón en cada contracción iba de 17 a 80% y la cantidad de plaquetas en la sangre iba de 25100 a 850000 kiloplatelets/mL. Los niveles medios de creatinina en sangre eran 1, y de creatinina en sodio eran de 137. Finalmente, a estos pacientes se les hizo seguimiento entre 12 y 285 días. 
+
+Ahora, los pacientes que fallecieron tenían entre 42 y 95 año. Los niveles medios de creatina fosfoquinasa en sangre fueron de 259 mcg/L. El porcentaje de sangre saliendo del corazón en cada contracción iba de 14 a 70% y la cantidad de plaquetas en la sangre iba de 47000 a 621000 kiloplatelets/mL. Los niveles medios de creatinina en sangre eran 1.3, y de creatinina en sodio eran de 135.5. Finalmente, estos pacientes murieron entre el día 4 y el 241. 
+
+Nótese que he reportado los valores de la mediana, ya que con estos resultados se puede anticipar que la distribución de las variables es asimétrica. 
+
+Ahora, analizaré la distribución de cada variable y los supuestos de normalidad y homocedasticidad mediante las pruebas de Anderson Darling y Levene, la cual es menos sensible a la no normalidad de los datos:
+
+
+
+
+## Edad
+
+
+```{r, message=FALSE}
+
+p1 <- ggplot(heart)+geom_density(aes(age), fill = "darkgreen", alpha=0.5, adjust=2) +
+  labs(x="Edad", y="Densidad")+ guides(fill=guide_legend(title=""))+
+  ggtitle("Distribución de la edad")
+
+p2 <- ggplot(heart, aes(x = DEATH_EVENT, y = age, fill = DEATH_EVENT))+geom_boxplot() +
+  labs(x="Edad")+ guides(fill=guide_legend(title="Muerte")) +
+ggtitle("Distribución de la edad \n según evento de muerte")
+
+grid.arrange(p1,p2,ncol = 2)
+
+```
+
+Se observa una distribución asimétrica y una gran cantidad de pacientes entre los 50 y 70 años de eda. También, que la edad media de las personas que murieron es mayor que la de las personas que no murieron. Por último, las edades de los que sobrevivieron son menos variables que de los que no.
+
+
+
+```{r, message=FALSE}
+ad.test(heart$age)
+qqPlot(heart$age, pch=20, ylab='edad',
+       main='QQplot para edad')
+leveneTest(y = heart$age, group = heart$DEATH_EVENT, center = "median")
+
+
+```
+
+Según el test de Levene para homogeneidad de varianza, existe suficiente evidencia en los datos para decir que las varianzas de las edades no son iguales entre los que murieron y los que no, también, que la variable no sigue una distribución normal. Y como se puede ver en el QQPlot, las observaciones 27 y 56 están mucho más desviadas de la distribución de la variable, y estas observaciones corresponden a personas con 95 años.
+
+
+## Creatina fosfoquinasa
+
+
+```{r, message=FALSE}
+
+p1<- ggplot(heart)+geom_density(aes(creatinine_phosphokinase), 
+                                fill = "darkgreen", alpha=0.5, adjust=2) +
+  labs(x="Nivel de PCK en sangre", y="Densidad")+ 
+guides(fill=guide_legend(title="")) +
+  ggtitle("Distribución del nivel de \n PCK en sangre")
+
+p2<- ggplot(heart, aes(x = DEATH_EVENT, y = creatinine_phosphokinase, 
+                       fill = DEATH_EVENT ))+geom_boxplot() +
+  labs(y="Nivel de PCK en sangre")+ 
+guides(fill=guide_legend(title="Muerte")) +
+  ggtitle("Nivel de PCK en sangre \n según evento de muerte")
+
+
+grid.arrange(p1,p2,ncol = 2)
+
+```
+
+Se observa una distribución asimétrica y al parecer multimodal y una gran cantidad de pacientes con niveles de PCK menores a 2000. También, que estos niveles no son muy diferentes entre los que murieron y los que no. Se destaca la poca presencia de valores bastante altos, por encima de los 5000 mcg/L, estos valores sin duda son extremos, sin embargo, más adelante analizaré si al ser atípicos influyen o no de manera significativa en los análisis posteriores. De momento, estos resultados indican una alta prevalencia de accidentes cerebro-vasculares,infartos, inflamación cardíaca, cirugías previas al corazón, pero también pueden indicar la realización de una actividad física intensa o incluso consumo de drogas ilícitas. 
+
+
+
+```{r, message=FALSE}
+
+ad.test(heart$creatinine_phosphokinase)
+qqPlot(heart$creatinine_phosphokinase, pch=20, ylab='PCK',
+       main='QQplot para nivel de PCK en sangre')
+leveneTest(y = heart$creatinine_phosphokinase, group = heart$DEATH_EVENT, center = "median")
+
+
+```
+
+El test de normalidad, indica que existe suficiente evidencia en los datos para decir que no provienen de una distribución normal, pero que sí hay homogeneidad de varianza entre los que murieron y los que no. El QQPlot, indica que las observaciones 61 y 2 esstán especialmente más alejadas de la distribución de la variable, y efectivamente pertenecen a personas cuyos niveles exceden los 7000 mcg/L. 
+
+
+
+
+## Fracción de eyección
+
+
+
+```{r, message=FALSE}
+
+p1<- ggplot(heart)+geom_histogram(aes(ejection_fraction), 
+                                  fill = "darkgreen", alpha=0.5, adjust=2) +
+  labs(x="Porcentaje de sangre saliendo", y="Frecuencia")+
+  guides(fill=guide_legend(title="")) + 
+ggtitle("Porcentaje \n de sangre saliendo")
+
+p2<- ggplot(heart, aes(x = DEATH_EVENT, y = ejection_fraction, 
+                       fill = DEATH_EVENT ))+geom_boxplot() +
+  labs(y="Porcentaje de sangre saliendo")+ 
+  guides(fill=guide_legend(title="Muerte"))+
+  ggtitle("Porcentaje \n de sangre saliendo \n según evento de muerte")
+
+grid.arrange(p1,p2,ncol = 2)
+
+```
+
+Se observa que la fracción de eyección es mayor en las personas que sobrevivieron que en las que no. Una fracción de eyección en personas sanas, en su mayoría va de 50-70%. Sin embargo, si el músculo cardíaco es grueso y rígido,el ventrículo contiene un volumen de sangre más bajo que lo normal,por lo que la cantidad total de sangre bombeada no sería la suficiente para satisfacer las necesidades del cuerpo, por esta razón, esta fracción se ve menor en los fallecidos.
+
+
+```{r, message=FALSE}
+
+ad.test(heart$ejection_fraction)
+qqPlot(heart$ejection_fraction, pch=20, ylab='%',
+       main='QQplot para % de sangre saliendo')
+leveneTest(y = heart$ejection_fraction, group = heart$DEATH_EVENT, center = "median")
+
+```
+
+El test de normalidad indica que existe suficiente evidencia en los datos para decir que los datos no provienen de una distribución normal, sin embargo, si existe evidencia (a un nivel de significancia del 5%) para decir que las varianzas son iguales entre los que murieron y los que no. Las observaciones 65 y 218 corresponden a fracciones de eyección entre 70 y 80%, lo que puede indicar en estos pacientes una enfermedad cardíaca.
+
+
+## Plaquetas
+
+```{r, message=FALSE}
+
+p1<-ggplot(heart)+geom_density(aes(platelets), 
+                               fill = "darkgreen", alpha=0.5, adjust=2)+
+labs(x="Plaquetas en sangre (kiloplatelets/mL)", y="Densidad")+
+guides(fill=guide_legend(title="")) +
+  ggtitle("Cantidad de plaquetas en la sangre")
+
+p2<-ggplot(heart, aes(x = DEATH_EVENT, y = platelets, 
+                      fill = DEATH_EVENT ))+geom_boxplot() +
+labs(y="Plaquetas en sangre (kiloplatelets/mL)")+
+guides(fill=guide_legend(title="Muerte")) +
+  ggtitle("Cantidad de plaquetas en la sangre \n según evento de muerte")
+
+
+grid.arrange(p1,p2,ncol = 2)
+
+```
+
+Se observa que la cantidad de plaquetas en la sangre es similar entre las personas que murieron y las que no. Existen valores superiores a los 600000 kiloplatelets/mL pero son muy pocos. 
+
+
+```{r, message=FALSE}
+ad.test(heart$platelets)
+qqPlot(heart$platelets, pch=20, ylab='cantidad',
+       main='# de plaquetas')
+leveneTest(y = heart$platelets, group = heart$DEATH_EVENT, center = "median")
+
+```
+
+Existe evidencia suficiente en los datos para decir que no provienen de una distribución normal, sin embargo hay evidencia de homogeneidad de varianza entre los que murieron y los que no. Las observaciones 297 y 110 que corresponden a una cantidad de plaquetas superior a los 740000 son las que están más alejadas de la distribución de la variable, sin embargo, eliminarlas no afecta significativamente dicha distribución.
+
+
+## Creatinina en sangre
+
+
+```{r, message=FALSE}
+
+p1<-ggplot(heart)+geom_density(aes(serum_creatinine),
+                               fill = "darkgreen", alpha=0.5, adjust=2) +
+labs(x="Nivel de creatinina en sangre", y="Densidad")+
+guides(fill=guide_legend(title="")) + 
+  ggtitle("Nivel de creatinina en sangre")
+
+p2<-ggplot(heart, aes(x = DEATH_EVENT, y = serum_creatinine,
+                      fill = DEATH_EVENT ))+geom_boxplot() +
+labs(y="Nivel de creatinina en sangre")+ 
+  guides(fill=guide_legend(title="Muerte"))+
+  ggtitle("Nivel de creatinina en sangre \n según evento de muerte")
+
+
+grid.arrange(p1,p2,ncol = 2)
+
+```
+
+Se observa los niveles de creatinina en la sangre son mucho menores en las personas que no murieron. La distribución de la variable es asimétrica y con presencia de pocos valores superiores a 5 mg/dL. Esto indicaría la presencia de enfermedades renales tanto en los pacientes que sobrevivieron como en los que no, sin embargo, los que murieron tenían mucha más probabilidad de desarrollar insuficiencia renal debido a sus altísimos niveles de creatinina. 
+
+
+```{r, message=FALSE}
+
+ad.test(heart$serum_creatinine)
+qqPlot(heart$serum_creatinine, pch=20, ylab='creatinina en sangre',
+       main='creatinina en sangre')
+leveneTest(y = heart$serum_creatinine, group = heart$DEATH_EVENT, center = "median")
+
+```
+No existe evidencia suficiente en los datos que indique la normalidad y la homogeneidad de varianza. 
+
+
+
+## Sodio en sangre
+
+
+```{r, message=FALSE}
+
+p1<-ggplot(heart)+geom_density(aes(serum_sodium),
+                               fill = "darkgreen", alpha=0.5, adjust=2) +
+labs(x="Nivel de sodio en sangre", y="Densidad")+ 
+guides(fill=guide_legend(title="")) +
+  ggtitle("Nivel de sodio en sangre")
+
+p2<-ggplot(heart, aes(x = DEATH_EVENT, y = serum_sodium, 
+                      fill = DEATH_EVENT ))+geom_boxplot() +
+labs(y="Nivel de sodio en sangre")+
+guides(fill=guide_legend(title="Muerte")) +
+  ggtitle("Nivel de sodio en sangre \n según evento de muerte")
+
+
+grid.arrange(p1,p2,ncol = 2)
+
+```
+
+Se observa que los niveles de sodio en la sangre son altos pero menores en las personas que murieron. La distribución de la variable es asimétrica y con presencia de pocos valores inferiores a  125. La mayoría de las personas tenían niveles normales de sodio. Los que tenían niveles bajos, probablemente presentaban altos niveles de azúcar en sangre, o acumulación en la orina de productos de desecho de la descomposición de la grasa, o problemas hormonales. 
+
+
+
+```{r, message=FALSE}
+ad.test(heart$serum_sodium)
+qqPlot(heart$serum_sodium, pch=20, ylab='sodio en sangre',
+       main='sodio en sangre')
+leveneTest(y = heart$serum_sodium, group = heart$DEATH_EVENT, center = "median")
+
+```
+
+No existe evidencia suficiente en los datos para decir que los datos siguen una distribución normal, sin embargo, a un nivel de significancia del 5% los datos no muestran varianzas homogéneas entre los que murieron y los que no. Ahora, a un nivel de significancia del 1% si se evidencian varianzas homogéneas. Desde mi experiencia, considero que si existen varianzas homogéneas.
+
+
+## Tiempo
+
+```{r, message=FALSE}
+
+p1<-ggplot(heart)+geom_density(aes(time), 
+                               fill = "darkgreen", alpha=0.5, adjust=2)+
+labs(x="Días", y="Densidad")+
+  guides(fill=guide_legend(title="")) +
+  ggtitle("Tiempo de seguimiento del paciente")
+
+p2<- ggplot(heart, aes(x = DEATH_EVENT, y = time, 
+                       fill = DEATH_EVENT ))+geom_boxplot()+
+labs(y="Días")+ 
+  guides(fill=guide_legend(title="Muerte")) +
+ggtitle("Tiempo de seguimiento del paciente \n según evento de muerte")
+
+
+
+grid.arrange(p1,p2,ncol = 2)
+
+```
+
+La cantidad de tiempo en la que se monitoreó a cada paciente, fue mayor en los que sobrevivieron que en los que no. 
+
+```{r, message=FALSE}
+ad.test(heart$time)
+qqPlot(heart$time, pch=20, ylab='dias',
+       main='tiempo de observacion')
+leveneTest(y = heart$time, group = heart$DEATH_EVENT, center = "median")
+
+```
+
+No existe evidencia en los datos para decir que provienen de una distribución normal con varianzas iguales. 
+
+
+
+## Identificación y tratamiento de valores atípicos
+
+
+```{r, message=FALSE}
+
+influyentes <- function(data){
+  
+  library('ggplot2')
+  library('ggrepel')
+  library('gridExtra')
+  
+  options(scipen=999)
+  group <-names(data[1])
+  independent <- names(data)[names(data) != group]
+  variables <- paste(independent, collapse="+")
+  frm <<- as.formula(paste(group, "~", variables, sep = ""))
+  
+  fit <<- glm(frm, data=data, family="binomial")
+  print(summary(fit))
+  
+  df.diagn <- data.frame(points=as.numeric(rownames(data)), y=fit$y,
+                         pred.prob=fit$fitted.values, res=rstandard(fit),
+                         CookDist=cooks.distance(fit), DepVar=as.factor(fit$y),
+                         leverage=hatvalues(fit))
+  
+  n.of.predictors <- sum(hatvalues(fit))-1 
+  lev.thresh <- round(3*((n.of.predictors+1)/nrow(data)),3)
+  df.diagn$lever.check <- ifelse(df.diagn$leverage>lev.thresh,
+                                 "lever. not ok","lever. ok")
+  
+  obs_per_factor <- plyr::count(df.diagn$DepVar) 
+  U <- wilcox.test(df.diagn$pred.prob ~ df.diagn$DepVar)$statistic
+  auc <- round(1-U/(obs_per_factor$freq[1]*obs_per_factor$freq[2]), 3)
+  
+  p1 <- ggplot(df.diagn, aes(x=res, y=leverage, color=DepVar)) + 
+    geom_point(aes(size = CookDist), shape=1, alpha=.80) + 
+    geom_hline(yintercept = lev.thresh, colour="grey", linetype = "longdash") +
+    theme_bw() + 
+    geom_text_repel(data = subset(df.diagn, abs(res) > 3 | 
+                                    leverage > lev.thresh | CookDist > 1), 
+aes(label = points), size = 2.7, colour="black", 
+box.padding = unit(0.35, "lines"), point.padding = unit(0.3, "lines")) + 
+labs(x = paste("Standardized residuals\n(labelled points=residual>|3| OR lever.>", lev.thresh,"OR Cook's dist.>1)"), y="Leverage") 
+  
+  p2 <- ggplot(df.diagn, aes(x=points, y=res, label=points)) + 
+    geom_point() + theme_bw() + 
+    geom_text_repel(data = subset(df.diagn, abs(res) > 3), 
+                    aes(label = points), size = 2.7, colour="black",
+                    box.padding = unit(0.35, "lines"), point.padding = unit(0.3, "lines")) + 
+    labs(x = "Observation number\n(labelled points=resid.>|3|)", y="Standardized residuals") 
+  
+  p3 <- ggplot(df.diagn, aes(x=points, y=leverage, label=points)) + 
+    geom_point() + theme_bw() + 
+    geom_text_repel(data = subset(df.diagn, leverage > lev.thresh), 
+                    aes(label = points), size = 2.7, colour="black",
+                    box.padding = unit(0.35, "lines"), point.padding = unit(0.3, "lines")) + 
+    labs(x = paste("Observation number\n(labelled points=leverage>",lev.thresh,")"), y="Leverage") 
+  
+  p4 <- ggplot(df.diagn, aes(x=points, y=CookDist, label=points)) + 
+    geom_point() + theme_bw() + 
+    geom_text_repel(data = subset(df.diagn, CookDist > 1), 
+                    aes(label = points), size = 2.7, colour="black",
+                    box.padding = unit(0.35, "lines"), point.padding = unit(0.3, "lines")) +
+    labs(x = "Observation number\n(labelled points=Cook's dist.>1)", y="Cook's distance") 
+  
+  print(p1)
+  grid.arrange(p2, p3, p4, ncol=1)
+  
+  
+}
+
+heart1<- data.frame(group = heart$DEATH_EVENT, heart[,-13])
+influyentes(data = heart1)
+
+```
+
+Según los gráficos de leverage y residuos estudentizados, existen 9 valores extremos en todo el dataset, sin embargo, la distancia de Cook indica que estos valores no son influyentes, y según lo que se vió la presencia de los distintos valores extremos en las variables no modifican su distribución significativamente. Por lo tanto, no los eliminaré. Ahora, con respecto al modelo logístico ajustado, se puede ver a priori que las variables edad, fracción de eyección, tiempo y creatinina en suero son significativamente estadísticas y pueden ayudar mucho a la clasificación
+
+
+## Correlación
+
+
+```{r, message=FALSE}
+corr <- cor(heart_c[,-8])
+
+ggcorrplot(corr, lab = TRUE) +theme(legend.position="right") +
+  ggtitle('Gráfico de correlación') + 
+  theme(plot.title = element_text(hjust = 0.5)) 
+
+```
+
+No hay correlaciones muy fuertes entre las variables, esto anticipa que no es muy probable que existan problemas de multicolinealidad en los modelos que se vayan a ajustar.  
+
+
+
+## Diferencia de medias
+
+
+Dado que las variables que se manejan aquí no siguen una distribución normal, realizaré una prueba no paramétrica para comparar las medias entre los que murieron y los que no: 
+
+```{r, message=FALSE, warning=FALSE}
+library(tidyverse)
+
+
+sds<-heart_c%>%group_by(DEATH_EVENT)%>%summarise_all(list(sd), na.rm=TRUE)%>%
+  gather("Variable", "Sd", -DEATH_EVENT)%>%
+  spread(DEATH_EVENT, Sd)%>%rename("Sd_0"='0', "Sd_1"="1")
+
+medians<-heart_c%>%group_by(DEATH_EVENT)%>%summarise_all(list(median), na.rm=TRUE )%>%
+  gather("Variable", "Median", -DEATH_EVENT)%>%
+  spread(DEATH_EVENT, Median)%>%rename("Median_0"='0', "Median_1"="1")
+
+summary_report<-medians%>%
+  inner_join(sds, "Variable")%>%
+  mutate(DiffInMedians=Median_1-Median_0)
+
+variables<-colnames(heart_c)[-8]
+pvals<-{}
+vars<-{}
+
+for (i in variables) {
+  
+  xxx<-heart_c%>%select(c("DEATH_EVENT", i))
+  
+  x1<-xxx%>%filter(DEATH_EVENT=="0")%>%dplyr::select(c(2))%>%na.omit()%>%pull()
+  x2<-xxx%>%filter(DEATH_EVENT=="1")%>%dplyr::select(c(2))%>%na.omit()%>%pull()
+  wc<-wilcox.test(x1,x2)
+  
+  
+  pvals<-c(pvals,round(wc$p.value,4) )
+  vars<-c(vars,i)
+  
+}
+wc_df<-data.frame(Variable=vars,pvalues=pvals)
+wc_df$Variable<-as.character(wc_df$Variable)
+summary_report<-summary_report%>%inner_join(wc_df, by="Variable")
+
+library(kableExtra)
+summary_report %>% kable() %>% kable_styling()
+```
+Según la tabla, la fracción de eyección, la creatinina en suero, la creatinina en sodio, el tiempo de seguimiento y la edad provienen de distribuciones con medias estadística y significativamente diferentes, ya que los test sugieren que los datos ofrecen evidencia suficiente para rechazar la hipótesis nula de igualdad de media. 
+
+
+
+# Análisis exploratorio de variables cualitativas  
+
+Analizaré la cantidad de personas fallecidas y no fallecidas dentro de cada categoría de las variables categóricas:
+
+
+```{r, message=FALSE,warning=FALSE}
+
+summary_categories <- data.frame(No_muerte = length(which(heart$anaemia == 0 &
+                                                          heart$DEATH_EVENT == 0)),
+                                 Muerte = length(which(heart$anaemia == 0 &
+                                                       heart$DEATH_EVENT == 1)))
+
+summary_categories <- rbind(summary_categories, c(length(which(heart$anaemia == 1 &
+                                                              heart$DEATH_EVENT == 0)),
+                                                  length(which(heart$anaemia == 1 &
+                                                              heart$DEATH_EVENT ==1))))
+
+summary_categories <- rbind(summary_categories, c(length(which(heart$diabetes == 0 &
+                                                              heart$DEATH_EVENT == 0)),
+                                                  length(which(heart$diabetes == 0 &
+                                                            heart$DEATH_EVENT == 1))))
+
+summary_categories <- rbind(summary_categories, c(length(which(heart$diabetes == 1 &
+                                                              heart$DEATH_EVENT == 0)),
+                                                  length(which(heart$diabetes == 1 &
+                                                            heart$DEATH_EVENT == 1))))
+
+summary_categories <- rbind(summary_categories,
+                            c(length(which(heart$high_blood_pressure == 0 &
+                                           heart$DEATH_EVENT == 0)),
+                              length(which(heart$high_blood_pressure == 0 &
+                                          heart$DEATH_EVENT == 1))))
+
+summary_categories <- rbind(summary_categories,
+                            c(length(which(heart$high_blood_pressure == 1 &
+                                           heart$DEATH_EVENT == 0)),
+                              length(which(heart$high_blood_pressure == 1 &
+                                           heart$DEATH_EVENT == 1))))
+
+summary_categories <- rbind(summary_categories, c(length(which(heart$sex == 0 &
+                                                              heart$DEATH_EVENT == 0)),
+                                                  length(which(heart$sex == 0 &
+                                                            heart$DEATH_EVENT == 1))))
+
+summary_categories <- rbind(summary_categories, c(length(which(heart$sex == 1 &
+                                                              heart$DEATH_EVENT == 0)),
+                                                  length(which(heart$sex == 1 &
+                                                            heart$DEATH_EVENT == 1))))
+
+summary_categories <- rbind(summary_categories, c(length(which(heart$smoking == 0 &
+                                                            heart$DEATH_EVENT == 0)),
+                                                  length(which(heart$smoking == 0 &
+                                                            heart$DEATH_EVENT == 1))))
+
+summary_categories <- rbind(summary_categories, c(length(which(heart$smoking == 1 &
+                                                              heart$DEATH_EVENT == 0)),
+                                                  length(which(heart$smoking == 1 &
+                                                            heart$DEATH_EVENT == 1))))
+
+
+summary_categories <- summary_categories %>% 
+  mutate(muestra_total = summary_categories$Muerte + summary_categories$No_muerte) 
+
+summary_categories<- summary_categories %>% 
+  mutate(porcentaje_no_muerte = round((summary_categories$No_muerte/summary_categories$muestra_total)*100, 4)) %>%
+  mutate(porcentaje_muerte = round((summary_categories$Muerte/summary_categories$muestra_total)*100, 4))
+
+rownames(summary_categories)<- c("no anemia","anemia", "no diabetes",
+                                 "diabetes", "no hipertension", "hipertension",
+                                 "mujer", "hombre", "no fuma", "fuma")
+
+
+summary_categories %>% kable()
+
+```
+
+
+La tabla muestra que solo el 35% de los pacientes que tenían anemia murieron, y el 70.6% de los que no tenían anemia se salvaron. También, que no existe mucha diferencia entre el porcentaje de personas que murieron teniendo o no diabetes. El 37% de los que tenían hipertensión fallecieron, y el 31% de los que fumaban también murieron. No existe mucha diferencia entre el porcentaje de hombres y mujeres que murieron. Sin embargo, el 86.4% de las personas que murieron tenían diabetes, o hipertensión o fumaban, pero la consideración de estos factores como factores potenciales de riesgo para muerte por insuficiencia cardíaca, en especial la diabetes y la hipertensión, estaría más asociada con otras características que muestran la afectación al funcionamiento normal del corazón. 
+
+
+Lo anterior lo comprobamos realizando un test de asociación Chi-cuadrado para saber si la ditribución de las muertes está asociada con la presencia de alguna de las variables anteriores:
+
+
+```{r, include=FALSE,message=FALSE}
+
+chisq.test(summary_categories[c(1,2),c(1,2)])
+
+chisq.test(summary_categories[c(3,4),c(1,2)])
+
+chisq.test(summary_categories[c(5,6),c(1,2)])
+
+chisq.test(summary_categories[c(7,8),c(1,2)])
+
+chisq.test(summary_categories[c(9,10),c(1,2)])
+
+```
+
+Los resultados, muestran que efectivamente existe una evidencia en los datos para decir que no existe una asociación fuerte entre la presencia de diabetes, hipertensión, fumar o el sexo y la muerte o no del paciente. 
+
+
+# Modelación
+
+Dado que el dataset presenta imbalance importante en los grupos de fallecidos (32.11%) y sobrevivientes (67.89%), no ajustaré una regresión logística para saber la probabilidad de fallecer o no según estas variables, sino que ajustaré una serie de modelos de ML para clasificar las observaciones, conocer el poder de clasificación que juntas tienen estas variables y ver cuáles son las más importantes.
+
+
+```{r, message=FALSE}
+
+df <- heart_c[,-8] %>%  scale() %>% as.data.frame()
+df<- data.frame(Y = heart$DEATH_EVENT, df,sex = heart$sex, 
+                smoking = heart$smoking, diabetes = heart$diabetes, 
+                high_blood_pressure = heart$high_blood_pressure,
+                anaemia = heart$anaemia)
+
+library(caret)
+library(caretEnsemble)
+
+```
+
+Previamente, estandaricé las variables cuantitativas y seleccioné los datos de entrenamiento (70%) y de testeo (30%) mediante la función createDataPartition del paquete Caret.
+
+```{r, message=FALSE}
+
+training<- read.csv("C:/Users/mvdiaz/Downloads/training_dataset.csv")
+training$Y<-as.factor(training$Y)
+training$sex<-as.factor(training$sex)
+training$smoking<-as.factor(training$smoking)
+training$diabetes<-as.factor(training$diabetes)
+training$high_blood_pressure<-as.factor(training$high_blood_pressure)
+training$anaemia<-as.factor(training$anaemia)
+
+
+testing <- read.csv("C:/Users/mvdiaz/Downloads/testing_dataset.csv")
+testing$Y<-as.factor(testing$Y)
+testing$sex<-as.factor(testing$sex)
+testing$smoking<-as.factor(testing$smoking)
+testing$diabetes<-as.factor(testing$diabetes)
+testing$high_blood_pressure<-as.factor(testing$high_blood_pressure)
+testing$anaemia<-as.factor(testing$anaemia)
+
+
+```
+
+
+```{r message=FALSE, warning=FALSE, cache=FALSE,results='hide'}
+
+control_prmt <- trainControl(method          = "LGOCV",
+                             p               = 0.7,
+                             number          = 10,
+                             savePredictions = "final",
+                             verboseIter     = FALSE)
+
+cat(">>> Fitting 5 models: random forest, SVM, knn, FDA, avNNet ...\n")
+capture.output(model_list <- caretEnsemble::caretList(
+  Y ~ .,
+  data       = training,
+  trControl  = control_prmt,
+  tuneList   = list(ranger = caretModelSpec(method = "ranger", importance = "impurity")),
+  methodList = c("svmRadial", "knn", "avNNet") #"bagFDA",
+  ))
+
+
+cat(">>> Calculating correlation and accuracy metrics over resamples ...\n")
+# It is expected high accuracy and un-correlation between them
+results <- list(model_correlations = modelCor(resamples(model_list)),
+                model_accuracies   = summary(resamples(model_list)),
+                final_model        = model_list)
+
+cat(">>> Calculating contingency table and metrics for training data ...\n")
+training_preds <- predict(model_list, newdata = training) %>% data.frame
+training_preds$ensemble <- apply(training_preds, 1, function(x){tt <- table(x);
+return(names(tt[which.max(tt)]))}) %>% factor
+# results$Training_predictions <- training_preds
+
+results$Training_CM <- training_preds %>%
+  purrr::map(function(x) suppressWarnings(caret::confusionMatrix(data = x, 
+                                                  reference = training$Y)))
+
+results$Training_MCC <- training_preds %>%
+  purrr::map(function(x) suppressWarnings(mltools::mcc(preds = x, 
+                                                       actuals = training$Y))) %>%
+  unlist
+
+cat(">>> Calculating contingency table and metrics for testing data ...\n")
+testing_preds <- predict(model_list, newdata = testing) %>% data.frame
+testing_preds$ensemble <- apply(testing_preds, 1, function(x){tt <- table(x);
+return(names(tt[which.max(tt)]))}) %>% factor
+# results$Testing_predictions <- testing_preds
+
+results$Testing_CM <- testing_preds %>%
+  purrr::map(function(x) suppressWarnings(caret::confusionMatrix(data = x, 
+                                                              reference = testing$Y)))
+
+results$Testing_MCC <- testing_preds %>%
+  purrr::map(function(x) suppressWarnings(mltools::mcc(preds = x, 
+                                                       actuals = testing$Y))) %>%
+  unlist
+
+
+impVar_list <- lapply(1:length(model_list), function(i){
+  vImportance <- caret::varImp(object = model_list[[i]])
+  impVar <- data.frame(impVar = rownames(vImportance$importance)[1:3])
+  return(impVar)
+})
+
+
+impVar_list <- do.call(cbind, impVar_list)
+colnames(impVar_list) <- names(model_list)
+results$Important_variables <- impVar_list
+
+```
+
+Ajustados los modelos, veré el MCC (Coeficiente de correlación de Mathews), para saber el accuracy de los modelos. Esto, debido al imbalance de los datos.
+
+```{r, message=FALSE}
+
+results$Testing_MCC
+```
+
+Se observa que el Random Forest obtuvo un mayor accuracy, es decir, que clasificó mejor los datos ya que logró acertar en un 55.9% de ellos. El modelo que peor los clasificó fue el K-Nearest Neighborhood.
+
+```{r, message=FALSE}
+
+results$Testing_CM$ensemble$table
+```
+
+También, se ve que en general los modelos clasificaron mejor a los sobrevivientes, y tiene sentido porque representan la mayor cantidad de los datos. 
+
+```{r, message=FALSE}
+
+results$Important_variables
+```
+
+Adicionalmente, las variables más importantes para la clasificación fueron la edad, los niveles de creatinina fosfoquinasa y la fracción de eyección. 
+
+
+# Conclusiones
+
+
+Durante el desarrollo de este trabajo, se pudo analizar los diversos factores de riesgo para mortalidad por fallas cardíacas en personas mayores de 40 años en una ciudad de Pakistán. Se encontró que en estos pacientes hay niveles de creatinina fosfoquinasa más altos de lo normal, lo que podría indicar desde ya un alta prevalencia de accidentes cerebro-vasculares,infartos, inflamación cardíaca y cirugías previas al corazón, sin embargo, esto también puede evidenciar la realización de una actividad física intensa o incluso consumo de drogas ilícitas, por esta razón, considero importante incluir en futuros análisis variables que den cuenta del consumo de sustancias psicoactivas, frecuencia e intensidad de la actividad física, o incluso de los niveles de estrés a los que esté sometido el paciente, ya que esto sin duda afecta el funcionamiento normal del corazón iniciando desde su ritmo. Ahora, las fracciones de eyección se ven normales, sin embargo, son menores entre los fallecidos, y tiene sentido ya que si el músculo cardíaco es grueso y rígido,el ventrículo contiene un volumen de sangre más bajo que lo normal,por lo que la cantidad total de sangre bombeada no sería la suficiente para satisfacer las necesidades del cuerpo; esto podría mostrar que los eventos de muerte fueron en parte por insuficiencias cardíacas, sin embargo, existen pacientes que aún teniendo esta patología, presentan una fracción de eyección normal, en este sentido, parece ser que esta variable por sí sola no determina una causal de muerte segura. La cantidad de plaquetas es normal. Los niveles de creatinina en sangre tan  altos como los que se ven, muestran la presencia de enfermedades renales tanto en los pacientes que sobrevivieron como en los que no, sin embargo, los que murieron tenían mucha más probabilidad de desarrollar insuficiencia renal debido a eso niveles. Los que tenían niveles bajos de sodio en sangre, probablemente presentaban altos
+niveles de azúcar en sangre, o acumulación en la orina de productos de desecho de la descomposición de la grasa, lo que sería también un indicio de daños renales. Adicionalmente, se observó que tener diabetes no necesariamente contribuye a una muerte por fallas cardiacas, tener anemia contribuye un poco, sin embargo, como se vio, los niveles de plaquetas son en general buenos en estos pacientes.
+
+Finalmente, las variables que más ayudan a determinar una muerte por posible falla cardíaca, son los niveles de creatinina tanto en sangre como fosfoquinasa, acompañados de la fracción de eyección y la edad, ya que probablemente a mayor edad, más deterioro del organismo y su funcionamiento en general. 
+
+Con respecto a los modelos ajustados, se logró un accuracy apenas superior al 55%, lo que soportaría la necesidad de inclusión de más variables como las mencionadas anteriormente y que den cuenta de los hábitos tanto físicos como nutricionales de las personas. 
+
+
+# Contribuciones
+
+```{r, message=FALSE}
+
+
+Contribuciones<-data.frame(Investigacion_previa = "Maria Victoria Diaz",
+                           Redaccion_de_las_respuestas =  "Maria Victoria Diaz",
+                           Desarrollo_codigo = "Maria Victoria Diaz")
+
+Contribuciones %>% kable()
+
+```
+
+
